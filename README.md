@@ -68,8 +68,8 @@ But for development I'm using the small dataset version
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| 1 | Foundation & Data Processing | In Progress |
-| 2 | Advanced Algorithms | Planned |
+| 1 | Foundation & Data Processing | Concluded |
+| 2 | Advanced Algorithms | In Progress |
 | 3 | Web Application | Planned |
 | 4 | Advanced Features | Planned |
 | 5 | Optimization & Documentation | Planned |
