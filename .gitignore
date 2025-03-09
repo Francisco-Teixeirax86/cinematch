@@ -12,6 +12,8 @@ data/raw/*
 data/processed/*
 !data/processed/.gitkeep
 
+results/
+
 # Jupyter
 .ipynb_checkpoints
 
