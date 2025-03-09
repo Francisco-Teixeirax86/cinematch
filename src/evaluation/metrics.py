@@ -3,8 +3,6 @@ Evaluation metrics for the recommendation algorithms.
 """
 
 import numpy as np
-import pandas
-import pandas as pd
 from sklearn.metrics import mean_squared_error
 import logging
 
@@ -222,6 +220,103 @@ def coverage(recommendations_dict, all_items):
     coverage_ratio = len(recommendations_dict) / len(all_items)
 
     return coverage_ratio * 100.0
-ß
 
+def evaluate_model(model, test_data, all_items=None, item_features=None, k=10):
+    """"
+    Comprehensive(I think) evaluation of recommendation model.
 
+    Arguments:
+        model {object} -- Recommendation model with predict method.
+        test_data {pandas.DataFrame} -- Test data with user-item-rating triplets.
+        all_items {list, optional} -- List of all available items for coverage calculation.
+        item_features {pandas.DataFrame, optional} -- Item features for diversity calculation.
+        k {int} -- Cutoff for top-k metrics.
+
+    Returns:
+        dict -- Dictionary with evaluation metrics.
+
+    """
+    logger.info("Starting evaluation of recommendation model.")
+
+    predictions = []
+    targets = []
+    user_recommendations = {}
+    user_relevance = {}
+
+    #Group test data by user for recommendation-based metrics
+    for user_id, user_data in test_data.groupby("user_id"):
+        #Get relevant items (items the user liked in test set)
+        relevent_items = user_data[user_data['rating'] >= 4.0]['movieId'].to_List()
+
+        #Get model recommendations for this user
+        try:
+            recommendations = model.recommned_movies(user_id, n_recommendations=k*2)
+            recommended_items = recommendations['movieId'].to_list()
+
+            #Store for later metrics calculation
+            user_recommendations[user_id] = recommended_items
+            user_relevance[user_id] = relevent_items
+
+            #For each test item, get prediction and actual rating
+            for _, row in user_data.iterrows():
+                movie_id = row['movieId']
+                actual_rating = row['rating']
+
+                #Predict rating
+                try:
+                    predicted_rating = model.predict_rating(user_id, movie_id)
+
+                    predictions.append(predicted_rating)
+                    targets.append(actual_rating)
+                except Exception as e:
+                    logger.warning(f"Failed to predict rating for user {user_id}, movie {movie_id}, Error: {e}")
+
+        except Exception as e:
+            logger.warning(f"Failed to generate recommendations for user {user_id}, Error: {e}")
+
+    #Calculate rating predictions metrics
+    metrics = {}
+    if predictions and targets:
+        metrics['rmse'] = rmse(predictions, targets)
+        metrics['mae'] = mae(predictions, targets)
+
+    #Calculate recommendation metrics
+    if user_recommendations and user_relevance:
+        precision_values = []
+        recall_values = []
+
+        for user_id, recommended_items in user_recommendations.items():
+            if user_id in user_relevance:
+                relevant_items = user_relevance[user_id]
+
+                if relevant_items:
+                    precision = precision_at_k(recommended_items, relevant_items, k=10)
+                    recall = recall_at_k(recommended_items, relevant_items, k=10)
+
+                    precision_values.append(precision)
+                    recall_values.append(recall)
+
+        if precision_values:
+            metrics['precision_at_k'] = np.mean(precision_values)
+        if recall_values:
+            metrics['recall_at_k'] = np.mean(recall_values)
+
+        #Calculate MAP
+        metrics['map'] = mean_average_precision(user_recommendations, user_relevance)
+
+    if all_items is not None and user_recommendations:
+        metrics['coverage'] = coverage(user_recommendations, all_items)
+
+    if item_features is not None and user_recommendations:
+        diversity_values = []
+
+        for recommended_items in user_recommendations.values():
+            if recommended_items:
+                div = diversity(recommended_items, item_features)
+                diversity_values.append(div)
+
+        if diversity_values:
+            metrics['diversity'] = np.mean(diversity_values)
+
+    logger.info("Finished evaluating recommendation model.")
+    return metrics
