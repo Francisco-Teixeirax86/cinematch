@@ -63,6 +63,11 @@ class UserBasedCF:
             logger.info("User similarity matrix not computed, computing user similarity matrix...")
             self.compute_user_similarity()
 
+        # Check if user exists in the matrix
+        if user_id not in self.user_movie_matrix.index:
+            logger.warning(f"User {user_id} not found in user-movie matrix")
+            return pd.DataFrame()
+
         logger.info(f"Generating recommendations for user {user_id}...")
 
         #Get movies the user has already rated
@@ -140,6 +145,7 @@ class UserBasedCF:
             self.compute_user_similarity()
 
         squared_error = []
+        predictions_count = 0
 
         for _, row in test_data.iterrows():
             user_id = row['userId']
@@ -158,7 +164,9 @@ class UserBasedCF:
             movie_rates = []
 
             for sim_user in similar_users.index:
-                if sim_user in self.user_movie_matrix and pd.notna(self.user_movie_matrix.loc[sim_user, movie_id]):
+                if (sim_user in self.user_movie_matrix.index and
+                        movie_id in self.user_movie_matrix.columns and
+                        pd.notna(self.user_movie_matrix.loc[sim_user, movie_id])):
                     movie_rates.append(sim_user)
 
             if not movie_rates:
@@ -174,19 +182,35 @@ class UserBasedCF:
                 weighted_sum += rating * similarity
                 similarity_sum += abs(similarity)
 
-            if similarity_sum == 0:
+            if similarity_sum <= 0.001:
                 continue
 
             predicted_rating = weighted_sum / similarity_sum
 
+            #Skip NaN or infinite predictions
+            if not np.isfinite(predicted_rating):
+                continue
+
+            predictions_count += 1
             error = predicted_rating - actual_rating
             squared_error.append(error ** 2)
 
+        if not squared_error or predictions_count < 10:
+            logger.warning(f"No or too few predictions made, cannot calculate RMSE reliably")
+            return None
+
+        squared_error = [e for e in squared_error if np.isfinite(e)]
+
         if not squared_error:
-            logger.warning(f"No predictions made, cannot calculate RMSE")
+            logger.warning("All error calculations resulted in non-finite values")
             return None
 
         rmse = np.sqrt(np.mean(squared_error))
+
+        if not np.isfinite(rmse):
+            logger.warning(f"RMSE calculation resulted in non-finite value: {rmse}")
+            return None
+
         logger.info(f"RMSE: {rmse}")
 
         return rmse
@@ -239,6 +263,10 @@ class ItemBasedCF:
         if self.movie_similarity_matrix is None:
             logger.info("User similarity matrix not computed, computing user similarity matrix...")
             self.compute_movie_similarity()
+
+        if user_id not in self.user_movie_matrix.index:
+            logger.warning(f"User {user_id} not found in user-movie matrix")
+            return pd.DataFrame()
 
         logger.info(f"Computing recommendations for user {user_id}...")
 
@@ -308,6 +336,7 @@ class ItemBasedCF:
             self.compute_movie_similarity()
 
         squared_error = []
+        predictions_count = 0
 
         for _, row in test_data.iterrows():
             user_id = row['userId']
@@ -350,20 +379,35 @@ class ItemBasedCF:
                 weighted_sum += similarity * rating
                 similarity_sum += abs(similarity)
 
-            if similarity_sum == 0:
+            if similarity_sum <= 0.001:
                 continue
 
             predicted_rating = weighted_sum / similarity_sum
 
+            if not np.isfinite(predicted_rating):
+                continue
+
+            predictions_count += 1
             error = predicted_rating - actual_rating
             squared_error.append(error ** 2)
 
+        if not squared_error or predictions_count < 10:
+            logger.warning("No or too few predictions made, cannot calculate RMSE reliably")
+            return None
+
+        squared_error = [e for e in squared_error if np.isfinite(e)]
+
         if not squared_error:
-            logger.warning("No predicitions made, cannot calculate RMSE")
+            logger.warning("All error calculations resulted in non-finite values")
             return None
 
         #Calculate RMSE
         rmse = np.sqrt(np.mean(squared_error))
+
+        if not np.isfinite(rmse):
+            logger.warning("All error calculations resulted in non-finite values")
+            return None
+
         logger.info(f"RMSE: {rmse}")
 
         return rmse
